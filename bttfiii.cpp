@@ -146,6 +146,7 @@ void HoverControl(CVehicle* vehicle)
 	float fPitch = 0.0f;
 	float fRoll = 0.0f;
 	float fYaw = 0.0f;
+	float fUp = 1.0f;
 	//tFlyingHandlingData* flyingHandling;
 	float rm = pow(flyingHandling->fMoveRes, CTimer::ms_fTimeStep);
 	/*if (vehicle->m_nState != 0 && vehicle->m_nState != 10) {
@@ -153,6 +154,9 @@ void HoverControl(CVehicle* vehicle)
 	}*/
 	vehicle->m_vecMoveSpeed *= rm;
 	float fUpSpeed = DotProduct(vehicle->m_vecMoveSpeed, vehicle->m_matrix.at);
+	float fAttitude = asin(vehicle->m_matrix.up.z);
+	float fAttitudeUp = fAttitude + radians(90.0f);
+	float fHeading = atan2(vehicle->m_matrix.up.y, vehicle->m_matrix.up.x);
 	if (vehicle->m_nState == 0 || vehicle->m_nState == 10) {
 		fThrust = (CPad::GetPad(0)->GetAccelerate() - CPad::GetPad(0)->GetBrake()) / 255.0f;
 		
@@ -174,13 +178,20 @@ void HoverControl(CVehicle* vehicle)
 		fPitch = Clamp(0.5f * DotProduct(vehicle->m_vecMoveSpeed, vehicle->m_matrix.up), -0.1f, 0.1f);
 		fRoll = Clamp(0.5f * DotProduct(vehicle->m_vecMoveSpeed, vehicle->m_matrix.right), -0.1f, 0.1f);
 	}*/
-	if (fThrust < 0.0f)
-		fThrust *= 2.0f;
-	fThrust = flyingHandling->fThrust * fThrust + 0.95f;
-	fThrust -= flyingHandling->fThrustFallOff * fUpSpeed;
+	fThrust = flyingHandling->fThrust * fThrust;
 	if (vehicle->GetPosition().z > 1000.0f)
 		fThrust *= 10.0f / (vehicle->GetPosition().z - 70.0f);
 	ApplyMoveForce(vehicle, GRAVITY * vehicle->m_matrix.at * fThrust * vehicle->m_fMass * CTimer::ms_fTimeStep);
+
+	// Hover
+	CVector upVector(cos(fAttitudeUp) * cos(fHeading), cos(fAttitudeUp) * sin(fHeading), sin(fAttitudeUp));
+	upVector.Normalise();
+
+	float fLiftSpeed = DotProduct(vehicle->m_vecMoveSpeed, upVector);
+	fUp -= flyingHandling->fThrustFallOff * fLiftSpeed;
+	fUp *= cos(fAttitude);
+
+	ApplyMoveForce(vehicle, GRAVITY * upVector * fUp * vehicle->m_fMass * CTimer::ms_fTimeStep);
 
 	if (vehicle->m_matrix.at.z > 0.0f) {
 		float upRight = Clamp(vehicle->m_matrix.right.z, -flyingHandling->fFormLift, flyingHandling->fFormLift);
@@ -207,6 +218,11 @@ void HoverControl(CVehicle* vehicle)
 	float fSideSpeed = -DotProduct(vehicle->m_vecMoveSpeed, vehicle->m_matrix.right);
 	float fSideSlipAccel = flyingHandling->fSideSlip * fSideSpeed * abs(fSideSpeed);
 	ApplyMoveForce(vehicle, vehicle->m_fMass * vehicle->m_matrix.right * fSideSlipAccel * CTimer::ms_fTimeStep);
+
+	fSideSpeed = -DotProduct(vehicle->m_vecMoveSpeed, vehicle->m_matrix.at);
+	fSideSlipAccel = flyingHandling->fSideSlip * fSideSpeed * abs(fSideSpeed);
+	ApplyMoveForce(vehicle, vehicle->m_fMass * vehicle->m_matrix.at * fSideSlipAccel * CTimer::ms_fTimeStep);
+
 	float fYawAccel = flyingHandling->fYawStab * fSideSpeed * abs(fSideSpeed) + flyingHandling->fYaw * fYaw;
 	ApplyTurnForce(vehicle, fYawAccel * vehicle->m_matrix.right * vehicle->m_fTurnMass * CTimer::ms_fTimeStep, -vehicle->m_matrix.up);
 	ApplyTurnForce(vehicle, fYaw * vehicle->m_matrix.up * flyingHandling->fYaw * vehicle->m_fTurnMass * CTimer::ms_fTimeStep, vehicle->m_matrix.right);
